@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-import asyncio
 import os
 
 intents = discord.Intents.default()
@@ -18,32 +17,52 @@ lose_commands = ['!lose', '!prehra']
 winmin_commands = ['!winmin', '!výhramin', '!vyhramin']
 losemin_commands = ['!losemin', '!prehramin']
 
-async def update_status():
-    global status_message
-    content = f"**Výhry:** {wins}\n**Prehry:** {losses}"
+async def create_status_message(channel):
+    global status_message, wins, losses
+    status_message = await channel.send(f"**Štatistiky:**\nVýhry: {wins}\nPrehry: {losses}")
+
+async def update_status(channel):
+    global status_message, wins, losses
+    content = f"**Štatistiky:**\nVýhry: {wins}\nPrehry: {losses}"
     try:
         await status_message.edit(content=content)
-    except:
-        pass
+    except (discord.NotFound, AttributeError):
+        await create_status_message(channel)
 
 @bot.event
 async def on_ready():
-    global status_message
+    global status_message, wins, losses
     print(f"Bot prihlásený ako {bot.user}")
     channel = bot.get_channel(channel_id)
     if channel is None:
         print("Neplatný kanál.")
         return
 
-    messages = [msg async for msg in channel.history(limit=100)]
-    for msg in messages:
+    bot_messages = []
+    async for msg in channel.history(limit=100):
         if msg.author == bot.user:
-            status_message = msg
-        else:
-            await msg.delete()
+            bot_messages.append(msg)
 
-    if not status_message:
-        status_message = await channel.send("**Výhry:** 0\n**Prehry:** 0")
+    # Vymažeme všetky staré správy bota okrem najnovšej
+    for msg in bot_messages[1:]:
+        try:
+            await msg.delete()
+        except:
+            pass
+
+    if bot_messages:
+        status_message = bot_messages[0]
+        # Pokúsime sa načítať hodnoty zo správy, ak chceš zachovať stav
+        try:
+            lines = status_message.content.split('\n')
+            wins = int(lines[1].split(':')[1].strip())
+            losses = int(lines[2].split(':')[1].strip())
+        except:
+            wins = 0
+            losses = 0
+            await status_message.edit(content=f"**Štatistiky:**\nVýhry: {wins}\nPrehry: {losses}")
+    else:
+        await create_status_message(channel)
 
 @bot.event
 async def on_message(message):
@@ -56,7 +75,6 @@ async def on_message(message):
         return
 
     content = message.content.lower()
-    await message.delete()
 
     if content in win_commands:
         wins += 1
@@ -67,8 +85,21 @@ async def on_message(message):
     elif content in losemin_commands:
         losses = max(0, losses - 1)
     else:
+        # Nepríkazová správa - vymaž ju a skonči
+        try:
+            await message.delete()
+        except:
+            pass
         return
 
-    await update_status()
+    # Ak správa je príkaz, tak vymaž pôvodnú správu používateľa
+    try:
+        await message.delete()
+    except:
+        pass
+
+    # Aktualizuj štatistiky
+    await update_status(message.channel)
 
 bot.run(os.getenv("BOT_TOKEN"))
+
