@@ -24,7 +24,6 @@ def create_embed(wins, losses):
     embed.add_field(name="✅ Výhry", value=str(wins), inline=True)
     embed.add_field(name="❌ Prehry", value=str(losses), inline=True)
     embed.add_field(name="📈 Winrate", value=f"{winrate:.2f} %", inline=False)
-    embed.set_footer(text="Použi príkazy: !win / !lose / !winmin / !losemin")
     return embed
 
 async def create_status_message(channel):
