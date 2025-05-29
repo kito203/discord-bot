@@ -17,15 +17,26 @@ lose_commands = ['!lose', '!prehra']
 winmin_commands = ['!winmin', '!výhramin', '!vyhramin']
 losemin_commands = ['!losemin', '!prehramin']
 
+def create_embed(wins, losses):
+    total = wins + losses
+    winrate = (wins / total * 100) if total > 0 else 0.0
+    embed = discord.Embed(title="📊 Štatistiky zápasov 📊", color=0x00ff00)
+    embed.add_field(name="✅ Výhry", value=str(wins), inline=True)
+    embed.add_field(name="❌ Prehry", value=str(losses), inline=True)
+    embed.add_field(name="📈 Winrate", value=f"{winrate:.2f} %", inline=False)
+    embed.set_footer(text="Použi príkazy: !win / !lose / !winmin / !losemin")
+    return embed
+
 async def create_status_message(channel):
     global status_message, wins, losses
-    status_message = await channel.send(f"**Štatistiky:**\nVýhry: {wins}\nPrehry: {losses}")
+    embed = create_embed(wins, losses)
+    status_message = await channel.send(embed=embed)
 
 async def update_status(channel):
     global status_message, wins, losses
-    content = f"**Štatistiky:**\nVýhry: {wins}\nPrehry: {losses}"
+    embed = create_embed(wins, losses)
     try:
-        await status_message.edit(content=content)
+        await status_message.edit(embed=embed)
     except (discord.NotFound, AttributeError):
         await create_status_message(channel)
 
@@ -43,7 +54,6 @@ async def on_ready():
         if msg.author == bot.user:
             bot_messages.append(msg)
 
-    # Vymažeme všetky staré správy bota okrem najnovšej
     for msg in bot_messages[1:]:
         try:
             await msg.delete()
@@ -52,15 +62,15 @@ async def on_ready():
 
     if bot_messages:
         status_message = bot_messages[0]
-        # Pokúsime sa načítať hodnoty zo správy, ak chceš zachovať stav
+        # Pokusíme sa načítať wins a losses zo embedu (ak tam sú)
         try:
-            lines = status_message.content.split('\n')
-            wins = int(lines[1].split(':')[1].strip())
-            losses = int(lines[2].split(':')[1].strip())
+            embed = status_message.embeds[0]
+            wins = int(embed.fields[0].value)
+            losses = int(embed.fields[1].value)
         except:
             wins = 0
             losses = 0
-            await status_message.edit(content=f"**Štatistiky:**\nVýhry: {wins}\nPrehry: {losses}")
+            await status_message.edit(embed=create_embed(wins, losses))
     else:
         await create_status_message(channel)
 
@@ -85,21 +95,17 @@ async def on_message(message):
     elif content in losemin_commands:
         losses = max(0, losses - 1)
     else:
-        # Nepríkazová správa - vymaž ju a skonči
         try:
             await message.delete()
         except:
             pass
         return
 
-    # Ak správa je príkaz, tak vymaž pôvodnú správu používateľa
     try:
         await message.delete()
     except:
         pass
 
-    # Aktualizuj štatistiky
     await update_status(message.channel)
 
 bot.run(os.getenv("BOT_TOKEN"))
-
