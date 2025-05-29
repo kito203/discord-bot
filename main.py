@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import asyncio
 import os
 
 intents = discord.Intents.default()
@@ -17,37 +18,40 @@ lose_commands = ['!lose', '!prehra']
 winmin_commands = ['!winmin', '!výhramin', '!vyhramin']
 losemin_commands = ['!losemin', '!prehramin']
 
+lock = asyncio.Lock()
+
 def create_embed(wins, losses):
     total = wins + losses
     winrate = (wins / total * 100) if total > 0 else 0.0
-    embed = discord.Embed(title="📊 Štatistiky  📊", color=0x00ff00)
+    embed = discord.Embed(title="📊 Štatistiky 📊", color=0x00ff00)
     embed.add_field(name="✅ Výhry", value=str(wins), inline=True)
     embed.add_field(name="❌ Prehry", value=str(losses), inline=True)
     embed.add_field(name="📈 Winrate", value=f"{winrate:.2f} %", inline=False)
     return embed
+
+async def clear_channel(channel):
+    async for msg in channel.history(limit=100):
+        try:
+            await msg.delete()
+        except:
+            pass
 
 async def create_status_message(channel):
     global status_message, wins, losses
     embed = create_embed(wins, losses)
     status_message = await channel.send(embed=embed)
 
-async def update_status(channel):
+async def update_status():
     global status_message, wins, losses
     embed = create_embed(wins, losses)
     try:
         await status_message.edit(embed=embed)
     except (discord.NotFound, AttributeError):
-        # Správa neexistuje, vytvoríme novú a vymažeme ostatné správy
-        await clear_channel_except_none(channel)
-        await create_status_message(channel)
-
-async def clear_channel_except_none(channel):
-    # Vymaž všetky správy v kanáli
-    async for msg in channel.history(limit=100):
-        try:
-            await msg.delete()
-        except:
-            pass
+        # Ak správa zmizla, vytvoríme novú
+        channel = bot.get_channel(channel_id)
+        if channel:
+            await clear_channel(channel)
+            await create_status_message(channel)
 
 @bot.event
 async def on_ready():
@@ -58,14 +62,9 @@ async def on_ready():
         print("Neplatný kanál.")
         return
 
-    # Najprv vymažeme všetky správy v kanáli
-    await clear_channel_except_none(channel)
-
-    # Pokúsime sa nájsť správu od bota (nemala by byť, lebo sme vymazali)
-    status_message = None
-
-    # Vytvoríme novú štatistickú správu
-    await create_status_message(channel)
+    async with lock:
+        await clear_channel(channel)
+        await create_status_message(channel)
 
 @bot.event
 async def on_message(message):
@@ -79,27 +78,27 @@ async def on_message(message):
 
     content = message.content.lower()
 
-    if content in win_commands:
-        wins += 1
-    elif content in lose_commands:
-        losses += 1
-    elif content in winmin_commands:
-        wins = max(0, wins - 1)
-    elif content in losemin_commands:
-        losses = max(0, losses - 1)
-    else:
-        # Vymažeme každú inú správu v kanáli
+    async with lock:
+        if content in win_commands:
+            wins += 1
+        elif content in lose_commands:
+            losses += 1
+        elif content in winmin_commands:
+            wins = max(0, wins - 1)
+        elif content in losemin_commands:
+            losses = max(0, losses - 1)
+        else:
+            try:
+                await message.delete()
+            except:
+                pass
+            return
+
         try:
             await message.delete()
         except:
             pass
-        return
 
-    try:
-        await message.delete()
-    except:
-        pass
-
-    await update_status(message.channel)
+        await update_status()
 
 bot.run(os.getenv("BOT_TOKEN"))
